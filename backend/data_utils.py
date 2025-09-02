@@ -18,7 +18,7 @@ def load_race_session(year: int, grand_prix: str, session_type: str = 'R'):
 
 def get_lap_data(session, driver: str = None):
     try:
-        laps = session.laps.pick_driver(driver) if driver else session.laps.copy()
+        laps = session.laps.pick_drivers(driver) if driver else session.laps.copy()
         laps = laps[['Driver', 'LapNumber', 'LapTime', 'Compound', 'TyreLife', 'TrackStatus', 'Stint', 'IsAccurate']]
         laps = laps[laps['IsAccurate'] == True].dropna(subset=['LapTime'])
         laps['LapTime(s)'] = laps['LapTime'].dt.total_seconds()
