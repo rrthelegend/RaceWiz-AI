@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, Float, String, ForeignKey
 from sqlalchemy.orm import relationship
-from backend.db import Base
+from app.db import Base
 
 class Lap(Base):
     __tablename__ = "laps"

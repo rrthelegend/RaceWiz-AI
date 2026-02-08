@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Date
-from backend.db import Base
+from app.db import Base
 
 class Race(Base):
     __tablename__ = "races"

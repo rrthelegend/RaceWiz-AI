@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, Float, Boolean, ForeignKey
-from backend.db import Base
+from app.db import Base
 
 class Weather(Base):
     __tablename__ = "weather"

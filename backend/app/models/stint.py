@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, ForeignKey
-from backend.db import Base
+from app.db import Base
 
 class Stint(Base):
     __tablename__ = "stints"
