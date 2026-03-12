@@ -1,53 +1,65 @@
+import argparse
+
 import fastf1
 import pandas as pd
 
 from app.db import SessionLocal
-from app.models.weather import Weather
+from app.models.race import Race
 from app.models.session import Session
+from app.models.weather import Weather
 
-YEAR = 2023
 
-
-def ingest_weather():
-
+def ingest_weather(year: int) -> None:
     db = SessionLocal()
+    try:
+        sessions = (
+            db.query(Session)
+            .join(Session.race)
+            .filter(Race.year == year)
+            .all()
+        )
 
-    sessions = db.query(Session).all()
+        for s in sessions:
+            try:
+                session = fastf1.get_session(year, s.race.name, s.session_type)
+                session.load(weather=True)
 
-    for s in sessions:
+                weather_df = session.weather_data
+                if weather_df is None or weather_df.empty:
+                    continue
 
-        try:
+                rows: list[dict] = []
+                for _, row in weather_df.iterrows():
+                    t = row["Time"]
+                    if pd.isna(t):
+                        continue
+                    time_offset = int(pd.to_timedelta(t).total_seconds())
 
-            session = fastf1.get_session(YEAR, s.race.name, s.session_type)
-            session.load(weather=True)
+                    rows.append(
+                        {
+                            "session_id": s.id,
+                            "time_offset": time_offset,
+                            "air_temp": row.get("AirTemp"),
+                            "track_temp": row.get("TrackTemp"),
+                            "humidity": row.get("Humidity"),
+                            "pressure": row.get("Pressure"),
+                            "rainfall": row.get("Rainfall"),
+                            "wind_speed": row.get("WindSpeed"),
+                            "wind_direction": row.get("WindDirection"),
+                        }
+                    )
 
-            weather_df = session.weather_data
-
-            weather_rows = []
-
-            for _, row in weather_df.iterrows():
-
-                weather_rows.append({
-                    "session_id": s.id,
-                    "time": row["Time"],
-                    "air_temp": row["AirTemp"],
-                    "track_temp": row["TrackTemp"],
-                    "humidity": row["Humidity"],
-                    "pressure": row["Pressure"],
-                    "rainfall": row["Rainfall"],
-                    "wind_speed": row["WindSpeed"]
-                })
-
-            db.bulk_insert_mappings(Weather, weather_rows)
-            db.commit()
-
-        except Exception:
-            continue
-
-    db.close()
-
-    print("weather ingested")
+                if rows:
+                    db.bulk_insert_mappings(Weather, rows)
+                    db.commit()
+            except Exception:
+                continue
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
-    ingest_weather()
+    parser = argparse.ArgumentParser(description="Ingest weather data for a given year")
+    parser.add_argument("--year", type=int, required=True, help="Championship year, e.g. 2023")
+    args = parser.parse_args()
+    ingest_weather(args.year)

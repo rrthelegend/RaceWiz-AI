@@ -1,56 +1,60 @@
+import argparse
+
 import fastf1
 import pandas as pd
 
 from app.db import SessionLocal
 from app.models.lap import Lap
+from app.models.race import Race
 from app.models.session import Session
 
-YEAR = 2023
 
-
-def ingest_laps():
-
+def ingest_laps(year: int) -> None:
     db = SessionLocal()
+    try:
+        sessions = (
+            db.query(Session)
+            .join(Session.race)
+            .filter(Session.session_type == "R", Race.year == year)
+            .all()
+        )
 
-    sessions = db.query(Session).filter(Session.session_type == "R").all()
+        for s in sessions:
+            print(f"Ingesting laps for {year} {s.race.name}")
 
-    for s in sessions:
+            session = fastf1.get_session(year, s.race.name, "R")
+            session.load()
 
-        print(f"Ingesting laps for {s.name}")
+            laps_df = session.laps
+            lap_dicts: list[dict] = []
 
-        session = fastf1.get_session(YEAR, s.race.name, "R")
-        session.load()
+            for _, lap in laps_df.iterrows():
+                if pd.isna(lap["LapTime"]):
+                    continue
 
-        laps_df = session.laps
+                lap_time_ms = int(lap["LapTime"].total_seconds() * 1000)
 
-        lap_dicts = []
+                lap_dicts.append(
+                    {
+                        "session_id": s.id,
+                        "driver_id": None,
+                        "lap_number": int(lap["LapNumber"]),
+                        "lap_time_ms": lap_time_ms,
+                        "stint": lap.get("Stint"),
+                        "compound": str(lap.get("Compound") or "").upper() or None,
+                        "tyre_life": lap.get("TyreLife"),
+                    }
+                )
 
-        for _, lap in laps_df.iterrows():
-
-            if pd.isna(lap["LapTime"]):
-                continue
-
-            lap_time_ms = int(lap["LapTime"].total_seconds() * 1000)
-
-            lap_dicts.append({
-                "session_id": s.id,
-                "driver_code": lap["Driver"],
-                "lap_number": int(lap["LapNumber"]),
-                "lap_time_ms": lap_time_ms,
-                "stint": lap["Stint"],
-                "compound": str(lap["Compound"]).upper(),
-                "sector1": lap["Sector1Time"].total_seconds() if not pd.isna(lap["Sector1Time"]) else None,
-                "sector2": lap["Sector2Time"].total_seconds() if not pd.isna(lap["Sector2Time"]) else None,
-                "sector3": lap["Sector3Time"].total_seconds() if not pd.isna(lap["Sector3Time"]) else None
-            })
-
-        db.bulk_insert_mappings(Lap, lap_dicts)
-        db.commit()
-
-    db.close()
-
-    print("laps ingested")
+            if lap_dicts:
+                db.bulk_insert_mappings(Lap, lap_dicts)
+                db.commit()
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
-    ingest_laps()
+    parser = argparse.ArgumentParser(description="Ingest lap data for a given year")
+    parser.add_argument("--year", type=int, required=True, help="Championship year, e.g. 2023")
+    args = parser.parse_args()
+    ingest_laps(args.year)

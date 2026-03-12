@@ -1,34 +1,33 @@
+import argparse
+
 import fastf1
+
 from app.db import SessionLocal
 from app.models.race import Race
 
-YEAR = 2023
 
-
-def ingest_races():
-
-    schedule = fastf1.get_event_schedule(YEAR)
+def ingest_races(year: int) -> None:
+    schedule = fastf1.get_event_schedule(year)
 
     db = SessionLocal()
-
-    for _, row in schedule.iterrows():
-
-        race = Race(
-            year=YEAR,
-            round=row["RoundNumber"],
-            name=row["EventName"],
-            location=row["Location"],
-            country=row["Country"],
-            date=row["EventDate"]
-        )
-
-        db.merge(race)
-
-    db.commit()
-    db.close()
-
-    print("races ingested")
+    try:
+        for _, row in schedule.iterrows():
+            race = Race(
+                year=year,
+                round=row["RoundNumber"],
+                name=row["EventName"],
+                location=row["Location"],
+                country=row["Country"],
+                date=row["EventDate"],
+            )
+            db.merge(race)
+        db.commit()
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
-    ingest_races()
+    parser = argparse.ArgumentParser(description="Ingest F1 races for a given year")
+    parser.add_argument("--year", type=int, required=True, help="Championship year, e.g. 2023")
+    args = parser.parse_args()
+    ingest_races(args.year)

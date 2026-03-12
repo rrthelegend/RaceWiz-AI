@@ -3,9 +3,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from starlette.requests import Request
 
+from app.db import Base, engine, DATABASE_URL
 from routes import (
     analytics,
     drivers,
+    health,
     laps,
     races,
     sessions,
@@ -32,10 +34,16 @@ def create_app() -> FastAPI:
     app.include_router(weather.router)
     app.include_router(analytics.router)
     app.include_router(strategy.router)
+    app.include_router(health.router)
 
     @app.get("/")
     async def root():
         return {"message": "RaceWiz AI backend is running"}
+
+    @app.on_event("startup")
+    def _startup() -> None:
+        if DATABASE_URL.startswith("sqlite"):
+            Base.metadata.create_all(bind=engine)
 
     @app.exception_handler(OperationalError)
     async def db_operational_error_handler(
