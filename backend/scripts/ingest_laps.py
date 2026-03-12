@@ -4,6 +4,7 @@ import fastf1
 import pandas as pd
 
 from app.db import SessionLocal
+from app.models.driver import Driver
 from app.models.lap import Lap
 from app.models.race import Race
 from app.models.session import Session
@@ -12,6 +13,9 @@ from app.models.session import Session
 def ingest_laps(year: int) -> None:
     db = SessionLocal()
     try:
+        drivers = db.query(Driver).all()
+        code_to_driver_id = {d.code: d.id for d in drivers if d.code}
+
         sessions = (
             db.query(Session)
             .join(Session.race)
@@ -34,10 +38,13 @@ def ingest_laps(year: int) -> None:
 
                 lap_time_ms = int(lap["LapTime"].total_seconds() * 1000)
 
+                 code = str(lap.get("Driver") or "").upper()
+                 driver_id = code_to_driver_id.get(code)
+
                 lap_dicts.append(
                     {
                         "session_id": s.id,
-                        "driver_id": None,
+                        "driver_id": driver_id,
                         "lap_number": int(lap["LapNumber"]),
                         "lap_time_ms": lap_time_ms,
                         "stint": lap.get("Stint"),

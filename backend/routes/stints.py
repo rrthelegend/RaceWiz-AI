@@ -1,8 +1,10 @@
 from collections.abc import Sequence
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.core.selectors import get_session_by_natural_key
+from app.models.driver import Driver as DriverModel
 from app.models.stint import Stint as StintModel
 from dependencies import get_db
 from schemas.stint import Stint as StintSchema
@@ -13,20 +15,25 @@ router = APIRouter(prefix="/stints", tags=["stints"])
 
 @router.get("/", response_model=list[StintSchema])
 def list_stints(
-    session_id: int = Query(..., description="Filter by session"),
-    driver_id: int | None = Query(default=None, description="Optional driver filter"),
+    year: int = Query(..., description="Season year, e.g. 2023"),
+    round: int = Query(..., description="Championship round number"),
+    session: str = Query(..., description="Session code, e.g. FP1, FP2, FP3, Q, SQ, R"),
+    driver: str | None = Query(
+        default=None, description="Optional driver code filter, e.g. VER, HAM"
+    ),
+    compound: str | None = Query(
+        default=None, description="Optional tyre compound filter, e.g. SOFT"
+    ),
     db: Session = Depends(get_db),
 ) -> Sequence[StintModel]:
-    query = db.query(StintModel).filter(StintModel.session_id == session_id)
-    if driver_id is not None:
-        query = query.filter(StintModel.driver_id == driver_id)
+    db_session = get_session_by_natural_key(db, year=year, round=round, session_code=session)
+
+    query = db.query(StintModel).filter(StintModel.session_id == db_session.id)
+
+    if driver is not None:
+        query = query.join(DriverModel).filter(DriverModel.code == driver.upper())
+
+    if compound is not None:
+        query = query.filter(StintModel.compound == compound.upper())
+
     return query.order_by(StintModel.start_lap).all()
-
-
-@router.get("/{stint_id}", response_model=StintSchema)
-def get_stint(stint_id: int, db: Session = Depends(get_db)) -> StintModel:
-    stint = db.get(StintModel, stint_id)
-    if not stint:
-        raise HTTPException(status_code=404, detail="Stint not found")
-    return stint
-
