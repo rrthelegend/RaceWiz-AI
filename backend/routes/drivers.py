@@ -1,11 +1,12 @@
 from collections.abc import Sequence
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.selectors import get_session_by_natural_key
 from app.models.driver import Driver as DriverModel
 from app.models.lap import Lap as LapModel
+from app.models.race import Race
+from app.models.session import Session as SessionModel
 from dependencies import get_db
 from schemas.driver import Driver as DriverSchema
 
@@ -23,7 +24,32 @@ def list_drivers(
     ),
     db: Session = Depends(get_db),
 ) -> Sequence[DriverModel]:
-    db_session = get_session_by_natural_key(db, year=year, round=round, session_code=session)
+
+    session = session.upper()
+
+    # normalize race session codes
+    if session == "R":
+        session = "Race"
+
+    race = (
+        db.query(Race)
+        .filter(Race.year == year)
+        .filter(Race.round == round)
+        .first()
+    )
+
+    if race is None:
+        raise HTTPException(status_code=404, detail="Race not found")
+
+    db_session = (
+        db.query(SessionModel)
+        .filter(SessionModel.race_id == race.id)
+        .filter(SessionModel.session_type == session)
+        .first()
+    )
+
+    if db_session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
 
     query = (
         db.query(DriverModel)
@@ -34,4 +60,6 @@ def list_drivers(
     if driver is not None:
         query = query.filter(DriverModel.code == driver.upper())
 
-    return query.distinct().order_by(DriverModel.code).all()
+    drivers = query.distinct().order_by(DriverModel.code).all()
+
+    return drivers

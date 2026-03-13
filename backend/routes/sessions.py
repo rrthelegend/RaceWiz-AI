@@ -1,13 +1,12 @@
 from collections.abc import Sequence
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.selectors import get_race_by_year_round
+from app.models.race import Race
 from app.models.session import Session as SessionModel
 from dependencies import get_db
 from schemas.session import Session as SessionSchema
-
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -18,10 +17,22 @@ def list_sessions(
     round: int = Query(..., description="Championship round number"),
     db: Session = Depends(get_db),
 ) -> Sequence[SessionModel]:
-    race = get_race_by_year_round(db, year=year, round=round)
-    return (
+
+    race = (
+        db.query(Race)
+        .filter(Race.year == year)
+        .filter(Race.round == round)
+        .first()
+    )
+
+    if race is None:
+        raise HTTPException(status_code=404, detail="Race not found")
+
+    sessions = (
         db.query(SessionModel)
         .filter(SessionModel.race_id == race.id)
         .order_by(SessionModel.start_time)
         .all()
     )
+
+    return sessions
