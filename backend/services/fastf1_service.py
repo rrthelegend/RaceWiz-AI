@@ -1,123 +1,57 @@
-import fastf1 
-import pandas as pd
+import fastf1
+import math
 
-class FastF1Service:
-    def __init__(self, cache_dir="fastf1_cache"):
-        fastf1.Cache.enable_cache(cache_dir)
+fastf1.Cache.enable_cache("fastf1_cache")
 
-    def load_session(self, year: int, event: str, session_type: str):
-        try:
-            session = fastf1.get_session(year, event, session_type)
-            session.load(weather=True)
-            return session
-        except Exception as e:
-            raise RuntimeError(f"Failed to load session : {year} {event} {session_type}") from e
-        
-    def get_laps(self, session) -> pd.DataFrame:
-        if session.laps is None or session.laps.empty:
-            raise ValueError("Session has no lap data loaded")
 
-        laps = session.laps.copy()
-        laps = laps.dropna(subset=["LapTime"])
-        laps["LapTimeMs"] = laps["LapTime"].dt.total_seconds() * 1000
+def clean_records(records):
+    """Convert NaN values to None so JSON works"""
 
-        if "Compound" in laps.columns:
-            laps["Compound"] = laps["Compound"].str.upper()
+    for row in records:
+        for key, value in row.items():
+            if isinstance(value, float) and math.isnan(value):
+                row[key] = None
 
-        laps["LapNumber"] = laps["LapNumber"].astype(int)
-        
-        laps = laps.sort_values(
-            by=["Driver", "LapNumber"], ascending=[True, True]
-        ).reset_index(drop=True)
+    return records
 
-        return laps
-    
-    def get_weather(self, session) -> pd.DataFrame:
-        weather = session.weather_data
-        if weather is None or weather.empty:
-            raise ValueError("Weather data not available for this session")
 
-        weather = weather.copy()
+def load_session(year: int, round: int, session_type: str):
 
-        if "Time" in weather.columns:
-            weather["Time"] = pd.to_timedelta(weather["Time"])
+    if session_type.upper() == "R":
+        session_type = "Race"
 
-        stable_columns = [
-            "Time",
-            "AirTemp",
-            "TrackTemp",
-            "Humidity",
-            "Pressure",
-            "Rainfall",
-            "WindDirection",
-            "WindSpeed",
-        ]
+    session = fastf1.get_session(year, round, session_type)
+    session.load()
 
-        available = [c for c in stable_columns if c in weather.columns]
-        weather = weather[available]
+    return session
 
-        weather = weather.reset_index(drop=True)
-        return weather
 
-    
-    def get_results(self, session) -> pd.DataFrame:
-        if session.results is None or session.results.empty:
-            raise ValueError("Session has no result data")
+def get_sessions(year: int):
 
-        results = session.results.copy()
+    schedule = fastf1.get_event_schedule(year)
 
-        
-        keep_cols = [
-            "Position",
-            "DriverNumber",
-            "Abbreviation",
-            "FullName",
-            "TeamName",
-            "Time",
-            "Status",
-        ]
+    records = schedule.to_dict(orient="records")
 
-        available_cols = [c for c in keep_cols if c in results.columns]
-        results = results[available_cols]
+    return clean_records(records)
 
-        return results.reset_index(drop=True)
 
-    
-    def get_fastest_lap_telemetry(
-        self, session, driver_code: str
-    ) -> pd.DataFrame:
-        laps = session.laps.pick_driver(driver_code)
+def get_laps(year: int, round: int, session_type: str):
 
-        if laps.empty:
-            raise ValueError(f"No laps found for driver {driver_code}")
+    session = load_session(year, round, session_type)
 
-        fastest_lap = laps.pick_fastest()
+    laps = session.laps
 
-        if fastest_lap is None:
-            raise ValueError(f"No fastest lap found for driver {driver_code}")
+    records = laps.to_dict(orient="records")
 
-        telemetry = (
-            fastest_lap.get_telemetry()
-            .add_distance()
-            .reset_index(drop=True)
-        )
+    return clean_records(records)
 
-        return telemetry
 
-    
-    def get_stints(self, session) -> pd.DataFrame:
-        laps = self.get_laps(session)
+def get_drivers(year: int, round: int, session_type: str):
 
-        stints = (
-            laps.groupby(["Driver", "Stint", "Compound"])
-            .agg(
-                StartLap=("LapNumber", "min"),
-                EndLap=("LapNumber", "max"),
-                StintLength=("LapNumber", "count"),
-            )
-            .reset_index()
-        )
+    session = load_session(year, round, session_type)
 
-        return stints
-    
-    
+    results = session.results
+
+    records = results.to_dict(orient="records")
+
+    return clean_records(records)
