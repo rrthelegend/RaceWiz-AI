@@ -1,16 +1,41 @@
 import fastf1
 import math
+import pandas as pd
 
 fastf1.Cache.enable_cache("fastf1_cache")
 
 
+def format_timedelta(value):
+    """Convert pandas Timedelta to F1 style time"""
+
+    if pd.isna(value):
+        return None
+
+    total_seconds = value.total_seconds()
+
+    minutes = int(total_seconds // 60)
+    seconds = int(total_seconds % 60)
+    milliseconds = int((total_seconds - int(total_seconds)) * 1000)
+
+    return f"{minutes}:{seconds:02d}.{milliseconds:03d}"
+
+
 def clean_records(records):
-    """Convert NaN values to None so JSON works"""
 
     for row in records:
         for key, value in row.items():
+
+            # Convert NaN
             if isinstance(value, float) and math.isnan(value):
                 row[key] = None
+
+            # Convert pandas Timedelta (lap times)
+            elif isinstance(value, pd.Timedelta):
+                row[key] = format_timedelta(value)
+
+            # Convert Timestamp
+            elif isinstance(value, pd.Timestamp):
+                row[key] = value.isoformat()
 
     return records
 
